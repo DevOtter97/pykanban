@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
@@ -25,6 +27,23 @@ def assert_column_owned(col_id: int, user: User, db: Session):
     col = db.query(BoardColumn).filter(BoardColumn.id == col_id, BoardColumn.owner_id == user.id).first()
     if not col:
         raise HTTPException(status_code=404, detail="Column not found")
+
+
+@router.get("/due", response_model=list[TaskResponse])
+def get_tasks_by_due_date(
+    overdue: bool = Query(False, description="Solo tareas vencidas"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Devuelve tareas con due_date asignada. Con ?overdue=true solo las vencidas."""
+    query = (
+        db.query(Task)
+        .join(BoardColumn)
+        .filter(BoardColumn.owner_id == current_user.id, Task.due_date.isnot(None))
+    )
+    if overdue:
+        query = query.filter(Task.due_date < datetime.now(timezone.utc))
+    return query.order_by(Task.due_date).all()
 
 
 @router.post("/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)

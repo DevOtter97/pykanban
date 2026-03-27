@@ -57,6 +57,7 @@ class TaskResponse(BaseModel):
     description: str | None
     position: int
     column_id: int
+    due_date: datetime | None
     created_at: datetime
     updated_at: datetime | None
     model_config = {"from_attributes": True}
@@ -78,12 +79,14 @@ class TaskCreate(BaseModel):
     description: str | None = None
     position: int = 0
     column_id: int
+    due_date: datetime | None = None
 
 class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     position: int | None = None
     column_id: int | None = None
+    due_date: datetime | None = None
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
