@@ -26,9 +26,14 @@ def run(engine: Engine):
         if "project_id" not in cols:
             conn.execute(text("ALTER TABLE columns ADD COLUMN project_id INTEGER"))
 
+        # 3. Add due_date column to tasks table if missing
+        task_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(tasks)"))]
+        if "due_date" not in task_cols:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN due_date DATETIME"))
+
         conn.commit()
 
-        # 3. For each user who has columns without a project, create a default project
+        # 4. For each user who has columns without a project, create a default project
         orphan_users = conn.execute(text("""
             SELECT DISTINCT owner_id FROM columns WHERE project_id IS NULL
         """)).fetchall()

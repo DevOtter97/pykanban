@@ -56,6 +56,7 @@ class Task(Base):
     description = Col(String, nullable=True)
     position    = Col(Integer, default=0)
     column_id   = Col(Integer, ForeignKey("columns.id"), nullable=False)
+    due_date    = Col(DateTime(timezone=True), nullable=True)
     created_at  = Col(DateTime(timezone=True), server_default=func.now())
     updated_at  = Col(DateTime(timezone=True), onupdate=func.now())
 
