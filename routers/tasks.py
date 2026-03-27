@@ -8,6 +8,11 @@ from database import get_db
 from models import BoardColumn, Task, User
 from schemas import TaskCreate, TaskUpdate, TaskResponse
 
+
+def assert_user_exists(user_id: int, db: Session):
+    if not db.query(User).filter(User.id == user_id).first():
+        raise HTTPException(status_code=404, detail="Assigned user not found")
+
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
@@ -46,6 +51,20 @@ def get_tasks_by_due_date(
     return query.order_by(Task.due_date).all()
 
 
+@router.get("/mine", response_model=list[TaskResponse])
+def get_my_tasks(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Tareas asignadas al usuario autenticado."""
+    return (
+        db.query(Task)
+        .filter(Task.assigned_to == current_user.id)
+        .order_by(Task.position)
+        .all()
+    )
+
+
 @router.post("/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 def create_task(
     data: TaskCreate,
@@ -53,6 +72,8 @@ def create_task(
     db: Session = Depends(get_db),
 ):
     assert_column_owned(data.column_id, current_user, db)
+    if data.assigned_to is not None:
+        assert_user_exists(data.assigned_to, db)
     task = Task(**data.model_dump())
     db.add(task)
     db.commit()
@@ -71,6 +92,8 @@ def update_task(
     updates = data.model_dump(exclude_unset=True)
     if "column_id" in updates:
         assert_column_owned(updates["column_id"], current_user, db)
+    if "assigned_to" in updates and updates["assigned_to"] is not None:
+        assert_user_exists(updates["assigned_to"], db)
     for field, value in updates.items():
         setattr(task, field, value)
     db.commit()

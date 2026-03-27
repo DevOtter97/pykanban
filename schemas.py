@@ -51,6 +51,11 @@ class ColumnUpdate(BaseModel):
     color: str | None = None
     position: int | None = None
 
+class AssigneeResponse(BaseModel):
+    id: int
+    username: str
+    model_config = {"from_attributes": True}
+
 class TaskResponse(BaseModel):
     id: int
     title: str
@@ -58,6 +63,8 @@ class TaskResponse(BaseModel):
     position: int
     column_id: int
     due_date: datetime | None
+    assigned_to: int | None
+    assignee: AssigneeResponse | None
     created_at: datetime
     updated_at: datetime | None
     model_config = {"from_attributes": True}
@@ -80,6 +87,7 @@ class TaskCreate(BaseModel):
     position: int = 0
     column_id: int
     due_date: datetime | None = None
+    assigned_to: int | None = None
 
 class TaskUpdate(BaseModel):
     title: str | None = None
@@ -87,6 +95,7 @@ class TaskUpdate(BaseModel):
     position: int | None = None
     column_id: int | None = None
     due_date: datetime | None = None
+    assigned_to: int | None = None
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
