@@ -57,7 +57,9 @@ class Task(Base):
     position    = Col(Integer, default=0)
     column_id   = Col(Integer, ForeignKey("columns.id"), nullable=False)
     due_date    = Col(DateTime(timezone=True), nullable=True)
+    assigned_to = Col(Integer, ForeignKey("users.id"), nullable=True)
     created_at  = Col(DateTime(timezone=True), server_default=func.now())
     updated_at  = Col(DateTime(timezone=True), onupdate=func.now())
 
-    column = relationship("BoardColumn", back_populates="tasks")
+    column   = relationship("BoardColumn", back_populates="tasks")
+    assignee = relationship("User", foreign_keys=[assigned_to])

@@ -26,10 +26,12 @@ def run(engine: Engine):
         if "project_id" not in cols:
             conn.execute(text("ALTER TABLE columns ADD COLUMN project_id INTEGER"))
 
-        # 3. Add due_date column to tasks table if missing
+        # 3. Add due_date and assigned_to columns to tasks table if missing
         task_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(tasks)"))]
         if "due_date" not in task_cols:
             conn.execute(text("ALTER TABLE tasks ADD COLUMN due_date DATETIME"))
+        if "assigned_to" not in task_cols:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN assigned_to INTEGER REFERENCES users(id)"))
 
         conn.commit()
 
