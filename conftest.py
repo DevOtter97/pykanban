@@ -80,9 +80,9 @@ def column(client, auth_header, project):
 
 
 @pytest.fixture()
-def task(client, auth_header, column):
-    resp = client.post("/tasks/", json={
-        "title": "Test Task",
+def card(client, auth_header, column):
+    resp = client.post("/cards/", json={
+        "title": "Test Card",
         "column_id": column["id"],
     }, headers=auth_header)
     assert resp.status_code == 201

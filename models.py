@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for users, projects, columns, and tasks."""
+"""SQLAlchemy ORM models for users, projects, columns, and cards."""
 
 from sqlalchemy import Column as Col, ForeignKey, Integer, String, DateTime
 from sqlalchemy.orm import relationship
@@ -53,13 +53,13 @@ class BoardColumn(Base):
 
     owner   = relationship("User", back_populates="columns")
     project = relationship("Project", back_populates="columns")
-    tasks   = relationship("Task", back_populates="column", cascade="all, delete", order_by="Task.position")
+    cards   = relationship("Card", back_populates="column", cascade="all, delete", order_by="Card.position")
 
 
-class Task(Base):
+class Card(Base):
     """Individual work item placed inside a board column."""
 
-    __tablename__ = "tasks"
+    __tablename__ = "cards"
 
     id          = Col(Integer, primary_key=True, index=True)
     title       = Col(String, nullable=False)
@@ -71,5 +71,5 @@ class Task(Base):
     created_at  = Col(DateTime(timezone=True), server_default=func.now())
     updated_at  = Col(DateTime(timezone=True), onupdate=func.now())
 
-    column   = relationship("BoardColumn", back_populates="tasks")
+    column   = relationship("BoardColumn", back_populates="cards")
     assignee = relationship("User", foreign_keys=[assigned_to])

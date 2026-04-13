@@ -12,7 +12,7 @@ logger = structlog.get_logger()
 
 import migrations
 from database import Base, engine
-from routers import tasks, users, columns, projects
+from routers import cards, users, columns, projects
 
 # Run migrations before creating tables (adds missing columns to existing DB)
 logger.info("running_database_migrations")
@@ -42,7 +42,7 @@ async def log_requests(request: Request, call_next):
 app.include_router(users.router)
 app.include_router(projects.router)
 app.include_router(columns.router)
-app.include_router(tasks.router)
+app.include_router(cards.router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

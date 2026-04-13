@@ -58,7 +58,7 @@ class AssigneeResponse(BaseModel):
     username: str
     model_config = {"from_attributes": True}
 
-class TaskResponse(BaseModel):
+class CardResponse(BaseModel):
     id: int
     title: str
     description: str | None
@@ -77,13 +77,13 @@ class ColumnResponse(BaseModel):
     color: str
     position: int
     project_id: int | None
-    tasks: list[TaskResponse] = []
+    cards: list[CardResponse] = []
     model_config = {"from_attributes": True}
 
 
-# ── Task ──────────────────────────────────────────────────────────────────────
+# ── Card ──────────────────────────────────────────────────────────────────────
 
-class TaskCreate(BaseModel):
+class CardCreate(BaseModel):
     title: str
     description: str | None = None
     position: int = 0
@@ -91,7 +91,7 @@ class TaskCreate(BaseModel):
     due_date: datetime | None = None
     assigned_to: int | None = None
 
-class TaskUpdate(BaseModel):
+class CardUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     position: int | None = None
