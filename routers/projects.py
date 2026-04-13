@@ -1,3 +1,4 @@
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -5,6 +6,8 @@ from auth import get_current_user
 from database import get_db
 from models import Project, User
 from schemas import ProjectCreate, ProjectUpdate, ProjectResponse
+
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -39,6 +42,7 @@ def create_project(
     db.add(project)
     db.commit()
     db.refresh(project)
+    logger.info("project_created", project_id=project.id, title=project.title, user_id=current_user.id)
     return project
 
 
@@ -54,6 +58,7 @@ def update_project(
         setattr(project, field, value)
     db.commit()
     db.refresh(project)
+    logger.info("project_updated", project_id=project_id, user_id=current_user.id)
     return project
 
 
@@ -66,3 +71,4 @@ def delete_project(
     project = own_project_or_404(project_id, current_user, db)
     db.delete(project)
     db.commit()
+    logger.info("project_deleted", project_id=project_id, user_id=current_user.id)
