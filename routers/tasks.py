@@ -1,5 +1,6 @@
 """CRUD endpoints for tasks, plus due-date and assignment queries."""
 
+import structlog
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -9,6 +10,8 @@ from auth import get_current_user
 from database import get_db
 from models import BoardColumn, Task, User
 from schemas import TaskCreate, TaskUpdate, TaskResponse
+
+logger = structlog.get_logger()
 
 
 def assert_user_exists(user_id: int, db: Session):
@@ -84,6 +87,7 @@ def create_task(
     db.add(task)
     db.commit()
     db.refresh(task)
+    logger.info("task_created", task_id=task.id, title=task.title, column_id=task.column_id, user_id=current_user.id)
     return task
 
 
@@ -105,6 +109,7 @@ def update_task(
         setattr(task, field, value)
     db.commit()
     db.refresh(task)
+    logger.info("task_updated", task_id=task_id, user_id=current_user.id)
     return task
 
 
@@ -118,3 +123,4 @@ def delete_task(
     task = own_task_or_404(task_id, current_user, db)
     db.delete(task)
     db.commit()
+    logger.info("task_deleted", task_id=task_id, user_id=current_user.id)

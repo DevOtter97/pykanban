@@ -1,5 +1,6 @@
 """CRUD endpoints for board columns, including default column creation."""
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -7,6 +8,8 @@ from auth import get_current_user
 from database import get_db
 from models import BoardColumn, Project, User
 from schemas import ColumnCreate, ColumnUpdate, ColumnResponse
+
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/columns", tags=["columns"])
 
@@ -49,6 +52,7 @@ def list_columns(
     )
     # Create default columns the first time a project is opened
     if not cols:
+        logger.info("default_columns_created", project_id=project_id, user_id=current_user.id)
         cols = [BoardColumn(**c, owner_id=current_user.id, project_id=project_id) for c in DEFAULT_COLUMNS]
         db.add_all(cols)
         db.commit()
@@ -69,6 +73,7 @@ def create_column(
     db.add(col)
     db.commit()
     db.refresh(col)
+    logger.info("column_created", column_id=col.id, title=col.title, project_id=data.project_id, user_id=current_user.id)
     return col
 
 
@@ -85,6 +90,7 @@ def update_column(
         setattr(col, field, value)
     db.commit()
     db.refresh(col)
+    logger.info("column_updated", column_id=col_id, user_id=current_user.id)
     return col
 
 
@@ -98,3 +104,4 @@ def delete_column(
     col = own_column_or_404(col_id, current_user, db)
     db.delete(col)
     db.commit()
+    logger.info("column_deleted", column_id=col_id, user_id=current_user.id)

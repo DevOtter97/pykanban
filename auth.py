@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
+import structlog
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -12,6 +13,8 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import User
 from schemas import TokenData
+
+logger = structlog.get_logger()
 
 # In production, load this from environment variables
 SECRET_KEY = "change-me-in-production-use-a-long-random-string"
@@ -53,12 +56,15 @@ def get_current_user(
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
+            logger.warning("auth_failed", reason="missing_sub_claim")
             raise credentials_exception
         token_data = TokenData(username=username)
     except JWTError:
+        logger.warning("auth_failed", reason="invalid_jwt")
         raise credentials_exception
 
     user = db.query(User).filter(User.username == token_data.username).first()
     if user is None:
+        logger.warning("auth_failed", reason="user_not_found", username=token_data.username)
         raise credentials_exception
     return user
