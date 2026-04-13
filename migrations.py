@@ -2,12 +2,16 @@
 Run lightweight migrations on startup without dropping existing data.
 Safe to run multiple times (idempotent).
 """
+import structlog
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+
+logger = structlog.get_logger()
 
 
 def run(engine: Engine):
     with engine.connect() as conn:
+        logger.info("migrations_started")
 
         # 1. Create projects table if it doesn't exist
         conn.execute(text("""
@@ -34,6 +38,7 @@ def run(engine: Engine):
             conn.execute(text("ALTER TABLE tasks ADD COLUMN assigned_to INTEGER REFERENCES users(id)"))
 
         conn.commit()
+        logger.info("schema_migrations_complete")
 
         # 4. For each user who has columns without a project, create a default project
         orphan_users = conn.execute(text("""
@@ -41,6 +46,7 @@ def run(engine: Engine):
         """)).fetchall()
 
         for (user_id,) in orphan_users:
+            logger.info("creating_default_project", user_id=user_id, reason="orphan_columns")
             # Create default project for this user
             result = conn.execute(text("""
                 INSERT INTO projects (title, description, position, owner_id)
