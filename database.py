@@ -1,3 +1,5 @@
+"""Database engine, session factory, and base model for SQLAlchemy."""
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -14,6 +16,7 @@ class Base(DeclarativeBase):
 
 
 def get_db():
+    """Yield a database session and ensure it is closed after use."""
     db = SessionLocal()
     try:
         yield db
