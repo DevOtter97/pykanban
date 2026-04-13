@@ -1,3 +1,5 @@
+"""SQLAlchemy ORM models for users, projects, columns, and tasks."""
+
 from sqlalchemy import Column as Col, ForeignKey, Integer, String, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -6,6 +8,8 @@ from database import Base
 
 
 class User(Base):
+    """Application user with email/password authentication."""
+
     __tablename__ = "users"
 
     id              = Col(Integer, primary_key=True, index=True)
@@ -19,6 +23,8 @@ class User(Base):
 
 
 class Project(Base):
+    """Top-level container that groups board columns under a single owner."""
+
     __tablename__ = "projects"
 
     id          = Col(Integer, primary_key=True, index=True)
@@ -33,6 +39,8 @@ class Project(Base):
 
 
 class BoardColumn(Base):
+    """Kanban column belonging to a project (e.g. Pendiente, En progreso, Hecho)."""
+
     __tablename__ = "columns"
 
     id         = Col(Integer, primary_key=True, index=True)
@@ -49,6 +57,8 @@ class BoardColumn(Base):
 
 
 class Task(Base):
+    """Individual work item placed inside a board column."""
+
     __tablename__ = "tasks"
 
     id          = Col(Integer, primary_key=True, index=True)

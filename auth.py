@@ -1,3 +1,5 @@
+"""JWT authentication utilities: password hashing, token creation, and user resolution."""
+
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -23,14 +25,17 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def hash_password(password: str) -> str:
+    """Return a bcrypt hash of the given plain-text password."""
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Check a plain-text password against its bcrypt hash."""
     return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
 
 
 def create_access_token(data: dict) -> str:
+    """Create a signed JWT with an expiration claim."""
     payload = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload.update({"exp": expire})
@@ -41,6 +46,7 @@ def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
     db: Session = Depends(get_db),
 ) -> User:
+    """Decode the Bearer token and return the authenticated User, or raise 401."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",

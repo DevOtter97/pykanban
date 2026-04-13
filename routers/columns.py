@@ -1,3 +1,5 @@
+"""CRUD endpoints for board columns, including default column creation."""
+
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -19,6 +21,7 @@ DEFAULT_COLUMNS = [
 
 
 def own_column_or_404(col_id: int, user: User, db: Session) -> BoardColumn:
+    """Return the column if it belongs to the user, otherwise raise 404."""
     col = db.query(BoardColumn).filter(BoardColumn.id == col_id, BoardColumn.owner_id == user.id).first()
     if not col:
         raise HTTPException(status_code=404, detail="Column not found")
@@ -26,6 +29,7 @@ def own_column_or_404(col_id: int, user: User, db: Session) -> BoardColumn:
 
 
 def own_project_or_404(project_id: int, user: User, db: Session) -> Project:
+    """Return the project if it belongs to the user, otherwise raise 404."""
     p = db.query(Project).filter(Project.id == project_id, Project.owner_id == user.id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -38,6 +42,7 @@ def list_columns(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """List columns for a project. Creates default columns on first access."""
     own_project_or_404(project_id, current_user, db)
     cols = (
         db.query(BoardColumn)
@@ -62,6 +67,7 @@ def create_column(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Create a new column in the given project."""
     own_project_or_404(data.project_id, current_user, db)
     col = BoardColumn(**data.model_dump(), owner_id=current_user.id)
     db.add(col)
@@ -78,6 +84,7 @@ def update_column(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Partially update a column. Only provided fields are changed."""
     col = own_column_or_404(col_id, current_user, db)
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(col, field, value)
@@ -93,6 +100,7 @@ def delete_column(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Delete a column and its cascading tasks."""
     col = own_column_or_404(col_id, current_user, db)
     db.delete(col)
     db.commit()

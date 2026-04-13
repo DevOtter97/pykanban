@@ -1,3 +1,5 @@
+"""CRUD endpoints for tasks, plus due-date and assignment queries."""
+
 import structlog
 from datetime import datetime, timezone
 
@@ -13,6 +15,7 @@ logger = structlog.get_logger()
 
 
 def assert_user_exists(user_id: int, db: Session):
+    """Raise 404 if no user with the given ID exists."""
     if not db.query(User).filter(User.id == user_id).first():
         raise HTTPException(status_code=404, detail="Assigned user not found")
 
@@ -20,6 +23,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
 def own_task_or_404(task_id: int, user: User, db: Session) -> Task:
+    """Return the task if it belongs to the user (via column ownership), otherwise raise 404."""
     task = (
         db.query(Task)
         .join(BoardColumn)
@@ -32,6 +36,7 @@ def own_task_or_404(task_id: int, user: User, db: Session) -> Task:
 
 
 def assert_column_owned(col_id: int, user: User, db: Session):
+    """Raise 404 if the column does not belong to the user."""
     col = db.query(BoardColumn).filter(BoardColumn.id == col_id, BoardColumn.owner_id == user.id).first()
     if not col:
         raise HTTPException(status_code=404, detail="Column not found")
@@ -74,6 +79,7 @@ def create_task(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Create a task in the specified column. Validates column ownership and assignee existence."""
     assert_column_owned(data.column_id, current_user, db)
     if data.assigned_to is not None:
         assert_user_exists(data.assigned_to, db)
@@ -92,6 +98,7 @@ def update_task(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Partially update a task. Validates column and assignee if changed."""
     task = own_task_or_404(task_id, current_user, db)
     updates = data.model_dump(exclude_unset=True)
     if "column_id" in updates:
@@ -112,6 +119,7 @@ def delete_task(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Delete a task by ID."""
     task = own_task_or_404(task_id, current_user, db)
     db.delete(task)
     db.commit()

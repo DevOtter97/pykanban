@@ -1,3 +1,5 @@
+"""CRUD endpoints for projects."""
+
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -13,6 +15,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 def own_project_or_404(project_id: int, user: User, db: Session) -> Project:
+    """Return the project if it belongs to the user, otherwise raise 404."""
     p = db.query(Project).filter(Project.id == project_id, Project.owner_id == user.id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -24,6 +27,7 @@ def list_projects(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """List all projects owned by the authenticated user."""
     return (
         db.query(Project)
         .filter(Project.owner_id == current_user.id)
@@ -38,6 +42,7 @@ def create_project(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Create a new project for the authenticated user."""
     project = Project(**data.model_dump(), owner_id=current_user.id)
     db.add(project)
     db.commit()
@@ -53,6 +58,7 @@ def update_project(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Partially update a project. Only provided fields are changed."""
     project = own_project_or_404(project_id, current_user, db)
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(project, field, value)
@@ -68,6 +74,7 @@ def delete_project(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Delete a project and its cascading columns/tasks."""
     project = own_project_or_404(project_id, current_user, db)
     db.delete(project)
     db.commit()
