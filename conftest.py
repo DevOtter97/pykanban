@@ -80,6 +80,37 @@ def column(client, auth_header, project):
 
 
 @pytest.fixture()
+def category(client, auth_header):
+    resp = client.post("/categories/", json={
+        "name": "Bug",
+        "description": "Bug report",
+    }, headers=auth_header)
+    assert resp.status_code == 201
+    return resp.json()
+
+
+@pytest.fixture()
+def typology(client, auth_header):
+    resp = client.post("/typologies/", json={
+        "name": "Desarrollo",
+        "description": "Development work",
+    }, headers=auth_header)
+    assert resp.status_code == 201
+    return resp.json()
+
+
+@pytest.fixture()
+def enabled_combo(client, auth_header, category, typology):
+    resp = client.put("/category-typology/", json={
+        "category_id": category["id"],
+        "typology_id": typology["id"],
+        "enabled": True,
+    }, headers=auth_header)
+    assert resp.status_code == 200
+    return resp.json()
+
+
+@pytest.fixture()
 def card(client, auth_header, column):
     resp = client.post("/cards/", json={
         "title": "Test Card",

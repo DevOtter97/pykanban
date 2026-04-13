@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_user
 from database import get_db
-from models import BoardColumn, Card, User
+from models import BoardColumn, Card, Category, CategoryTypology, Typology, User
 from schemas import CardCreate, CardUpdate, CardResponse
 
 logger = structlog.get_logger()
@@ -18,6 +18,29 @@ def assert_user_exists(user_id: int, db: Session):
     """Raise 404 if no user with the given ID exists."""
     if not db.query(User).filter(User.id == user_id).first():
         raise HTTPException(status_code=404, detail="Assigned user not found")
+
+
+def assert_category_typology_allowed(category_id: int | None, typology_id: int | None, db: Session):
+    """Validate that the category and typology exist and their combination is enabled."""
+    if category_id is not None:
+        if not db.query(Category).filter(Category.id == category_id).first():
+            raise HTTPException(status_code=404, detail="Category not found")
+    if typology_id is not None:
+        if not db.query(Typology).filter(Typology.id == typology_id).first():
+            raise HTTPException(status_code=404, detail="Typology not found")
+    if category_id is not None and typology_id is not None:
+        mapping = (
+            db.query(CategoryTypology)
+            .filter(
+                CategoryTypology.category_id == category_id,
+                CategoryTypology.typology_id == typology_id,
+                CategoryTypology.enabled == True,
+            )
+            .first()
+        )
+        if not mapping:
+            raise HTTPException(status_code=400, detail="Category+typology combination not allowed")
+
 
 router = APIRouter(prefix="/cards", tags=["cards"])
 
@@ -79,10 +102,11 @@ def create_card(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Create a card in the specified column. Validates column ownership and assignee existence."""
+    """Create a card. Validates column ownership, assignee, and category+typology combo."""
     assert_column_owned(data.column_id, current_user, db)
     if data.assigned_to is not None:
         assert_user_exists(data.assigned_to, db)
+    assert_category_typology_allowed(data.category_id, data.typology_id, db)
     card = Card(**data.model_dump())
     db.add(card)
     db.commit()
@@ -98,13 +122,18 @@ def update_card(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Partially update a card. Validates column and assignee if changed."""
+    """Partially update a card. Validates column, assignee, and category+typology if changed."""
     card = own_card_or_404(card_id, current_user, db)
     updates = data.model_dump(exclude_unset=True)
     if "column_id" in updates:
         assert_column_owned(updates["column_id"], current_user, db)
     if "assigned_to" in updates and updates["assigned_to"] is not None:
         assert_user_exists(updates["assigned_to"], db)
+    # Validate category+typology combo (use existing values as fallback)
+    new_cat = updates.get("category_id", card.category_id)
+    new_typ = updates.get("typology_id", card.typology_id)
+    if "category_id" in updates or "typology_id" in updates:
+        assert_category_typology_allowed(new_cat, new_typ, db)
     for field, value in updates.items():
         setattr(card, field, value)
     db.commit()

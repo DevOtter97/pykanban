@@ -35,12 +35,18 @@ def run(engine: Engine):
         if "tasks" in tables and "cards" not in tables:
             conn.execute(text("ALTER TABLE tasks RENAME TO cards"))
 
-        # 4. Add due_date and assigned_to columns to cards table if missing
+        # 4. Add missing columns to cards table
         card_cols = [row[1] for row in conn.execute(text("PRAGMA table_info(cards)"))]
         if "due_date" not in card_cols:
             conn.execute(text("ALTER TABLE cards ADD COLUMN due_date DATETIME"))
         if "assigned_to" not in card_cols:
             conn.execute(text("ALTER TABLE cards ADD COLUMN assigned_to INTEGER REFERENCES users(id)"))
+        if "category_id" not in card_cols:
+            conn.execute(text("ALTER TABLE cards ADD COLUMN category_id INTEGER REFERENCES categories(id)"))
+        if "typology_id" not in card_cols:
+            conn.execute(text("ALTER TABLE cards ADD COLUMN typology_id INTEGER REFERENCES typologies(id)"))
+        if "content" not in card_cols:
+            conn.execute(text("ALTER TABLE cards ADD COLUMN content JSON"))
 
         conn.commit()
         logger.info("schema_migrations_complete")

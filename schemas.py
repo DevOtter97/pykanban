@@ -53,6 +53,59 @@ class ColumnUpdate(BaseModel):
     color: str | None = None
     position: int | None = None
 
+
+# ── Category ──────────────────────────────────────────────────────────────────
+
+class CategoryCreate(BaseModel):
+    name: str
+    description: str | None = None
+
+class CategoryUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+class CategoryResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None
+    model_config = {"from_attributes": True}
+
+
+# ── Typology ──────────────────────────────────────────────────────────────────
+
+class TypologyCreate(BaseModel):
+    name: str
+    description: str | None = None
+
+class TypologyUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+class TypologyResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None
+    model_config = {"from_attributes": True}
+
+
+# ── CategoryTypology ─────────────────────────────────────────────────────────
+
+class CategoryTypologySet(BaseModel):
+    category_id: int
+    typology_id: int
+    enabled: bool
+
+class CategoryTypologyResponse(BaseModel):
+    category_id: int
+    typology_id: int
+    enabled: bool
+    category: CategoryResponse
+    typology: TypologyResponse
+    model_config = {"from_attributes": True}
+
+
+# ── Card ──────────────────────────────────────────────────────────────────────
+
 class AssigneeResponse(BaseModel):
     id: int
     username: str
@@ -64,6 +117,11 @@ class CardResponse(BaseModel):
     description: str | None
     position: int
     column_id: int
+    category_id: int | None
+    typology_id: int | None
+    content: dict | None
+    category: CategoryResponse | None
+    typology: TypologyResponse | None
     due_date: datetime | None
     assigned_to: int | None
     assignee: AssigneeResponse | None
@@ -80,14 +138,14 @@ class ColumnResponse(BaseModel):
     cards: list[CardResponse] = []
     model_config = {"from_attributes": True}
 
-
-# ── Card ──────────────────────────────────────────────────────────────────────
-
 class CardCreate(BaseModel):
     title: str
     description: str | None = None
     position: int = 0
     column_id: int
+    category_id: int | None = None
+    typology_id: int | None = None
+    content: dict | None = None
     due_date: datetime | None = None
     assigned_to: int | None = None
 
@@ -96,6 +154,9 @@ class CardUpdate(BaseModel):
     description: str | None = None
     position: int | None = None
     column_id: int | None = None
+    category_id: int | None = None
+    typology_id: int | None = None
+    content: dict | None = None
     due_date: datetime | None = None
     assigned_to: int | None = None
 

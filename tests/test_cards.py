@@ -12,6 +12,30 @@ class TestCreateCard:
         assert data["title"] == "New Card"
         assert data["column_id"] == column["id"]
 
+    def test_create_with_category_typology(self, client, auth_header, column, enabled_combo, category, typology):
+        resp = client.post("/cards/", json={
+            "title": "Typed Card",
+            "column_id": column["id"],
+            "category_id": category["id"],
+            "typology_id": typology["id"],
+            "content": {"acceptance_criteria": "Must pass all tests"},
+        }, headers=auth_header)
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["category"]["name"] == "Bug"
+        assert data["typology"]["name"] == "Desarrollo"
+        assert data["content"]["acceptance_criteria"] == "Must pass all tests"
+
+    def test_create_disallowed_combo(self, client, auth_header, column, category, typology):
+        resp = client.post("/cards/", json={
+            "title": "Bad combo",
+            "column_id": column["id"],
+            "category_id": category["id"],
+            "typology_id": typology["id"],
+        }, headers=auth_header)
+        assert resp.status_code == 400
+        assert "not allowed" in resp.json()["detail"]
+
     def test_create_with_due_date(self, client, auth_header, column):
         due = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
         resp = client.post("/cards/", json={
@@ -48,6 +72,14 @@ class TestCreateCard:
         }, headers=auth_header)
         assert resp.status_code == 404
 
+    def test_create_invalid_category(self, client, auth_header, column):
+        resp = client.post("/cards/", json={
+            "title": "X",
+            "column_id": column["id"],
+            "category_id": 999,
+        }, headers=auth_header)
+        assert resp.status_code == 404
+
 
 class TestUpdateCard:
     def test_update_title(self, client, auth_header, card):
@@ -56,6 +88,21 @@ class TestUpdateCard:
         }, headers=auth_header)
         assert resp.status_code == 200
         assert resp.json()["title"] == "Updated"
+
+    def test_update_content(self, client, auth_header, column, enabled_combo, category, typology):
+        create = client.post("/cards/", json={
+            "title": "Card",
+            "column_id": column["id"],
+            "category_id": category["id"],
+            "typology_id": typology["id"],
+            "content": {"notes": "v1"},
+        }, headers=auth_header)
+        card_id = create.json()["id"]
+        resp = client.patch(f"/cards/{card_id}", json={
+            "content": {"notes": "v2"},
+        }, headers=auth_header)
+        assert resp.status_code == 200
+        assert resp.json()["content"]["notes"] == "v2"
 
     def test_update_not_found(self, client, auth_header):
         resp = client.patch("/cards/999", json={"title": "X"}, headers=auth_header)

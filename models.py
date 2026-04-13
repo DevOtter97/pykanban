@@ -1,6 +1,6 @@
-"""SQLAlchemy ORM models for users, projects, columns, and cards."""
+"""SQLAlchemy ORM models for users, projects, columns, cards, categories, and typologies."""
 
-from sqlalchemy import Column as Col, ForeignKey, Integer, String, DateTime
+from sqlalchemy import Boolean, Column as Col, ForeignKey, Integer, String, DateTime, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -56,6 +56,43 @@ class BoardColumn(Base):
     cards   = relationship("Card", back_populates="column", cascade="all, delete", order_by="Card.position")
 
 
+class Category(Base):
+    """Card category (e.g. Bug, Task, Sugerencia)."""
+
+    __tablename__ = "categories"
+
+    id          = Col(Integer, primary_key=True, index=True)
+    name        = Col(String, unique=True, nullable=False)
+    description = Col(String, nullable=True)
+
+    allowed_typologies = relationship("CategoryTypology", back_populates="category")
+
+
+class Typology(Base):
+    """Card typology / template (e.g. Desarrollo, Mantenimiento, Diseño)."""
+
+    __tablename__ = "typologies"
+
+    id          = Col(Integer, primary_key=True, index=True)
+    name        = Col(String, unique=True, nullable=False)
+    description = Col(String, nullable=True)
+
+    allowed_categories = relationship("CategoryTypology", back_populates="typology")
+
+
+class CategoryTypology(Base):
+    """Many-to-many check table: which category+typology combos are enabled."""
+
+    __tablename__ = "category_typology"
+
+    category_id = Col(Integer, ForeignKey("categories.id"), primary_key=True)
+    typology_id = Col(Integer, ForeignKey("typologies.id"), primary_key=True)
+    enabled     = Col(Boolean, nullable=False, default=True)
+
+    category = relationship("Category", back_populates="allowed_typologies")
+    typology = relationship("Typology", back_populates="allowed_categories")
+
+
 class Card(Base):
     """Individual work item placed inside a board column."""
 
@@ -66,10 +103,15 @@ class Card(Base):
     description = Col(String, nullable=True)
     position    = Col(Integer, default=0)
     column_id   = Col(Integer, ForeignKey("columns.id"), nullable=False)
+    category_id = Col(Integer, ForeignKey("categories.id"), nullable=True)
+    typology_id = Col(Integer, ForeignKey("typologies.id"), nullable=True)
+    content     = Col(JSON, nullable=True)
     due_date    = Col(DateTime(timezone=True), nullable=True)
     assigned_to = Col(Integer, ForeignKey("users.id"), nullable=True)
     created_at  = Col(DateTime(timezone=True), server_default=func.now())
     updated_at  = Col(DateTime(timezone=True), onupdate=func.now())
 
     column   = relationship("BoardColumn", back_populates="cards")
+    category = relationship("Category")
+    typology = relationship("Typology")
     assignee = relationship("User", foreign_keys=[assigned_to])
