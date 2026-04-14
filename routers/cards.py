@@ -1,4 +1,4 @@
-"""CRUD endpoints for cards, plus due-date and assignment queries."""
+"""CRUD endpoints for cards, plus due-date queries, assignment, and state transitions."""
 
 import structlog
 from datetime import datetime, timezone
@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from auth import get_current_user
 from database import get_db
 from models import BoardColumn, Card, Category, CategoryTypology, Typology, User
-from schemas import CardCreate, CardUpdate, CardResponse
+from permissions import require_project_access, require_team_member
+from schemas import CardCreate, CardUpdate, CardResponse, CardMove
 
 logger = structlog.get_logger()
 
@@ -45,24 +46,29 @@ def assert_category_typology_allowed(category_id: int | None, typology_id: int |
 router = APIRouter(prefix="/cards", tags=["cards"])
 
 
-def own_card_or_404(card_id: int, user: User, db: Session) -> Card:
-    """Return the card if it belongs to the user (via column ownership), otherwise raise 404."""
-    card = (
-        db.query(Card)
-        .join(BoardColumn)
-        .filter(Card.id == card_id, BoardColumn.owner_id == user.id)
-        .first()
-    )
+def _get_card_with_access(card_id: int, user: User, db: Session) -> Card:
+    """Return the card if the user has access (via project team membership), otherwise raise 404."""
+    card = db.query(Card).join(BoardColumn).filter(Card.id == card_id).first()
     if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    col = card.column
+    if col.project_id:
+        require_project_access(user, col.project_id, db)
+    elif col.owner_id and col.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Card not found")
     return card
 
 
-def assert_column_owned(col_id: int, user: User, db: Session):
-    """Raise 404 if the column does not belong to the user."""
-    col = db.query(BoardColumn).filter(BoardColumn.id == col_id, BoardColumn.owner_id == user.id).first()
+def _assert_column_accessible(col_id: int, user: User, db: Session) -> BoardColumn:
+    """Return the column if the user has access, otherwise raise 404."""
+    col = db.query(BoardColumn).filter(BoardColumn.id == col_id).first()
     if not col:
         raise HTTPException(status_code=404, detail="Column not found")
+    if col.project_id:
+        require_project_access(user, col.project_id, db)
+    elif col.owner_id and col.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Column not found")
+    return col
 
 
 @router.get("/due", response_model=list[CardResponse])
@@ -75,8 +81,24 @@ def get_cards_by_due_date(
     query = (
         db.query(Card)
         .join(BoardColumn)
-        .filter(BoardColumn.owner_id == current_user.id, Card.due_date.isnot(None))
+        .filter(Card.due_date.isnot(None))
     )
+    # Filter by accessible columns (team membership or legacy ownership)
+    if current_user.role != "superadmin":
+        from models import TeamMember, Project
+        team_ids = (
+            db.query(TeamMember.team_id)
+            .filter(TeamMember.user_id == current_user.id)
+            .subquery()
+        )
+        project_ids = (
+            db.query(Project.id)
+            .filter((Project.team_id.in_(team_ids)) | (Project.owner_id == current_user.id))
+            .subquery()
+        )
+        query = query.filter(
+            (BoardColumn.project_id.in_(project_ids)) | (BoardColumn.owner_id == current_user.id)
+        )
     if overdue:
         query = query.filter(Card.due_date < datetime.now(timezone.utc))
     return query.order_by(Card.due_date).all()
@@ -102,8 +124,8 @@ def create_card(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Create a card. Validates column ownership, assignee, and category+typology combo."""
-    assert_column_owned(data.column_id, current_user, db)
+    """Create a card. Any team member can create cards."""
+    _assert_column_accessible(data.column_id, current_user, db)
     if data.assigned_to is not None:
         assert_user_exists(data.assigned_to, db)
     assert_category_typology_allowed(data.category_id, data.typology_id, db)
@@ -122,14 +144,11 @@ def update_card(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Partially update a card. Validates column, assignee, and category+typology if changed."""
-    card = own_card_or_404(card_id, current_user, db)
+    """Partially update a card. Any team member can update. Use POST /cards/{id}/move to change state."""
+    card = _get_card_with_access(card_id, current_user, db)
     updates = data.model_dump(exclude_unset=True)
-    if "column_id" in updates:
-        assert_column_owned(updates["column_id"], current_user, db)
     if "assigned_to" in updates and updates["assigned_to"] is not None:
         assert_user_exists(updates["assigned_to"], db)
-    # Validate category+typology combo (use existing values as fallback)
     new_cat = updates.get("category_id", card.category_id)
     new_typ = updates.get("typology_id", card.typology_id)
     if "category_id" in updates or "typology_id" in updates:
@@ -142,14 +161,56 @@ def update_card(
     return card
 
 
+@router.post("/{card_id}/move", response_model=CardResponse)
+def move_card(
+    card_id: int,
+    data: CardMove,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Move a card to a different column (state change). Records completion date for DONE column."""
+    card = _get_card_with_access(card_id, current_user, db)
+    target_col = _assert_column_accessible(data.column_id, current_user, db)
+
+    old_column_id = card.column_id
+    card.column_id = target_col.id
+
+    # Record completion when moving to DONE
+    if target_col.title == "DONE":
+        card.completed_at = datetime.now(timezone.utc)
+        if data.notes:
+            card.completion_notes = data.notes
+    else:
+        # Clear completion data if moved away from DONE
+        card.completed_at = None
+        card.completion_notes = None
+
+    # If notes provided and target is not DONE, still store them as completion_notes
+    # (useful for DESCARTADO or other states where notes make sense)
+    if data.notes and target_col.title != "DONE":
+        card.completion_notes = data.notes
+
+    db.commit()
+    db.refresh(card)
+    logger.info(
+        "card_moved",
+        card_id=card_id,
+        from_column=old_column_id,
+        to_column=target_col.id,
+        to_title=target_col.title,
+        user_id=current_user.id,
+    )
+    return card
+
+
 @router.delete("/{card_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_card(
     card_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Delete a card by ID."""
-    card = own_card_or_404(card_id, current_user, db)
+    """Delete a card by ID. Any team member can delete cards."""
+    card = _get_card_with_access(card_id, current_user, db)
     db.delete(card)
     db.commit()
     logger.info("card_deleted", card_id=card_id, user_id=current_user.id)
