@@ -4,194 +4,171 @@ import structlog
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
 
 from auth import get_current_user
-from database import get_db
-from models import BoardColumn, Card, Category, CategoryTypology, Typology, User
-from permissions import require_project_access, require_team_member
-from schemas import CardCreate, CardUpdate, CardResponse, CardMove
+from models.user import UserOut
+from models.card import CardCreate, CardUpdate, CardOut, CardMove
+from permissions import require_project_access
+from repositories.protocols import (
+    CardRepository, ColumnRepository, ProjectRepository,
+    TeamRepository, UserRepository, CategoryRepository,
+    TypologyRepository, CategoryTypologyRepository,
+)
+from repositories.sqlalchemy import (
+    get_card_repo, get_column_repo, get_project_repo,
+    get_team_repo, get_user_repo, get_category_repo,
+    get_typology_repo, get_cat_typ_repo,
+)
 
 logger = structlog.get_logger()
-
-
-def assert_user_exists(user_id: int, db: Session):
-    """Raise 404 if no user with the given ID exists."""
-    if not db.query(User).filter(User.id == user_id).first():
-        raise HTTPException(status_code=404, detail="Assigned user not found")
-
-
-def assert_category_typology_allowed(category_id: int | None, typology_id: int | None, db: Session):
-    """Validate that the category and typology exist and their combination is enabled."""
-    if category_id is not None:
-        if not db.query(Category).filter(Category.id == category_id).first():
-            raise HTTPException(status_code=404, detail="Category not found")
-    if typology_id is not None:
-        if not db.query(Typology).filter(Typology.id == typology_id).first():
-            raise HTTPException(status_code=404, detail="Typology not found")
-    if category_id is not None and typology_id is not None:
-        mapping = (
-            db.query(CategoryTypology)
-            .filter(
-                CategoryTypology.category_id == category_id,
-                CategoryTypology.typology_id == typology_id,
-                CategoryTypology.enabled == True,
-            )
-            .first()
-        )
-        if not mapping:
-            raise HTTPException(status_code=400, detail="Category+typology combination not allowed")
-
 
 router = APIRouter(prefix="/cards", tags=["cards"])
 
 
-def _get_card_with_access(card_id: int, user: User, db: Session) -> Card:
-    """Return the card if the user has access (via project team membership), otherwise raise 404."""
-    card = db.query(Card).join(BoardColumn).filter(Card.id == card_id).first()
-    if not card:
-        raise HTTPException(status_code=404, detail="Card not found")
-    col = card.column
-    if col.project_id:
-        require_project_access(user, col.project_id, db)
-    elif col.owner_id and col.owner_id != user.id:
-        raise HTTPException(status_code=404, detail="Card not found")
-    return card
-
-
-def _assert_column_accessible(col_id: int, user: User, db: Session) -> BoardColumn:
+def _assert_column_accessible(col_id: int, user: UserOut, column_repo: ColumnRepository, project_repo: ProjectRepository, team_repo: TeamRepository):
     """Return the column if the user has access, otherwise raise 404."""
-    col = db.query(BoardColumn).filter(BoardColumn.id == col_id).first()
+    col = column_repo.get(col_id)
     if not col:
         raise HTTPException(status_code=404, detail="Column not found")
     if col.project_id:
-        require_project_access(user, col.project_id, db)
+        require_project_access(user, col.project_id, project_repo, team_repo)
     elif col.owner_id and col.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Column not found")
     return col
 
 
-@router.get("/due", response_model=list[CardResponse])
+def _get_card_with_access(card_id: int, user: UserOut, card_repo: CardRepository, column_repo: ColumnRepository, project_repo: ProjectRepository, team_repo: TeamRepository):
+    """Return the card if the user has access, otherwise raise 404."""
+    card = card_repo.get(card_id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+    col = column_repo.get(card.column_id)
+    if col and col.project_id:
+        require_project_access(user, col.project_id, project_repo, team_repo)
+    elif col and col.owner_id and col.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Card not found")
+    return card
+
+
+def _assert_category_typology_allowed(category_id, typology_id, cat_repo: CategoryRepository, typ_repo: TypologyRepository, cat_typ_repo: CategoryTypologyRepository):
+    """Validate that the category and typology exist and their combination is enabled."""
+    if category_id is not None:
+        if not cat_repo.exists(category_id):
+            raise HTTPException(status_code=404, detail="Category not found")
+    if typology_id is not None:
+        if not typ_repo.exists(typology_id):
+            raise HTTPException(status_code=404, detail="Typology not found")
+    if category_id is not None and typology_id is not None:
+        if not cat_typ_repo.is_combination_allowed(category_id, typology_id):
+            raise HTTPException(status_code=400, detail="Category+typology combination not allowed")
+
+
+@router.get("/due", response_model=list[CardOut])
 def get_cards_by_due_date(
     overdue: bool = Query(False, description="Solo cards vencidas"),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: UserOut = Depends(get_current_user),
+    card_repo: CardRepository = Depends(get_card_repo),
+    project_repo: ProjectRepository = Depends(get_project_repo),
 ):
     """Devuelve cards con due_date asignada. Con ?overdue=true solo las vencidas."""
-    query = (
-        db.query(Card)
-        .join(BoardColumn)
-        .filter(Card.due_date.isnot(None))
-    )
-    # Filter by accessible columns (team membership or legacy ownership)
-    if current_user.role != "superadmin":
-        from models import TeamMember, Project
-        team_ids = (
-            db.query(TeamMember.team_id)
-            .filter(TeamMember.user_id == current_user.id)
-            .scalar_subquery()
-        )
-        project_ids = (
-            db.query(Project.id)
-            .filter((Project.team_id.in_(team_ids)) | (Project.owner_id == current_user.id))
-            .scalar_subquery()
-        )
-        query = query.filter(
-            (BoardColumn.project_id.in_(project_ids)) | (BoardColumn.owner_id == current_user.id)
-        )
-    if overdue:
-        query = query.filter(Card.due_date < datetime.now(timezone.utc))
-    return query.order_by(Card.due_date).all()
+    if current_user.role == "superadmin":
+        return card_repo.list_by_due_date(accessible_project_ids=None, owner_id=None, overdue=overdue)
+    projects = project_repo.list_accessible(user_id=current_user.id, role=current_user.role)
+    project_ids = [p.id for p in projects]
+    return card_repo.list_by_due_date(accessible_project_ids=project_ids, owner_id=current_user.id, overdue=overdue)
 
 
-@router.get("/mine", response_model=list[CardResponse])
+@router.get("/mine", response_model=list[CardOut])
 def get_my_cards(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: UserOut = Depends(get_current_user),
+    card_repo: CardRepository = Depends(get_card_repo),
 ):
     """Cards asignadas al usuario autenticado."""
-    return (
-        db.query(Card)
-        .filter(Card.assigned_to == current_user.id)
-        .order_by(Card.position)
-        .all()
-    )
+    return card_repo.list_by_assignee(current_user.id)
 
 
-@router.post("/", response_model=CardResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=CardOut, status_code=status.HTTP_201_CREATED)
 def create_card(
     data: CardCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: UserOut = Depends(get_current_user),
+    card_repo: CardRepository = Depends(get_card_repo),
+    column_repo: ColumnRepository = Depends(get_column_repo),
+    project_repo: ProjectRepository = Depends(get_project_repo),
+    team_repo: TeamRepository = Depends(get_team_repo),
+    user_repo: UserRepository = Depends(get_user_repo),
+    cat_repo: CategoryRepository = Depends(get_category_repo),
+    typ_repo: TypologyRepository = Depends(get_typology_repo),
+    cat_typ_repo: CategoryTypologyRepository = Depends(get_cat_typ_repo),
 ):
     """Create a card. Any team member can create cards."""
-    _assert_column_accessible(data.column_id, current_user, db)
+    _assert_column_accessible(data.column_id, current_user, column_repo, project_repo, team_repo)
     if data.assigned_to is not None:
-        assert_user_exists(data.assigned_to, db)
-    assert_category_typology_allowed(data.category_id, data.typology_id, db)
-    card = Card(**data.model_dump())
-    db.add(card)
-    db.commit()
-    db.refresh(card)
+        if not user_repo.exists(data.assigned_to):
+            raise HTTPException(status_code=404, detail="Assigned user not found")
+    _assert_category_typology_allowed(data.category_id, data.typology_id, cat_repo, typ_repo, cat_typ_repo)
+    card = card_repo.create(data.model_dump())
     logger.info("card_created", card_id=card.id, title=card.title, column_id=card.column_id, user_id=current_user.id)
     return card
 
 
-@router.patch("/{card_id}", response_model=CardResponse)
+@router.patch("/{card_id}", response_model=CardOut)
 def update_card(
     card_id: int,
     data: CardUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: UserOut = Depends(get_current_user),
+    card_repo: CardRepository = Depends(get_card_repo),
+    column_repo: ColumnRepository = Depends(get_column_repo),
+    project_repo: ProjectRepository = Depends(get_project_repo),
+    team_repo: TeamRepository = Depends(get_team_repo),
+    user_repo: UserRepository = Depends(get_user_repo),
+    cat_repo: CategoryRepository = Depends(get_category_repo),
+    typ_repo: TypologyRepository = Depends(get_typology_repo),
+    cat_typ_repo: CategoryTypologyRepository = Depends(get_cat_typ_repo),
 ):
     """Partially update a card. Any team member can update. Use POST /cards/{id}/move to change state."""
-    card = _get_card_with_access(card_id, current_user, db)
+    card = _get_card_with_access(card_id, current_user, card_repo, column_repo, project_repo, team_repo)
     updates = data.model_dump(exclude_unset=True)
     if "assigned_to" in updates and updates["assigned_to"] is not None:
-        assert_user_exists(updates["assigned_to"], db)
+        if not user_repo.exists(updates["assigned_to"]):
+            raise HTTPException(status_code=404, detail="Assigned user not found")
     new_cat = updates.get("category_id", card.category_id)
     new_typ = updates.get("typology_id", card.typology_id)
     if "category_id" in updates or "typology_id" in updates:
-        assert_category_typology_allowed(new_cat, new_typ, db)
-    for field, value in updates.items():
-        setattr(card, field, value)
-    db.commit()
-    db.refresh(card)
+        _assert_category_typology_allowed(new_cat, new_typ, cat_repo, typ_repo, cat_typ_repo)
+    updated = card_repo.update(card_id, updates)
     logger.info("card_updated", card_id=card_id, user_id=current_user.id)
-    return card
+    return updated
 
 
-@router.post("/{card_id}/move", response_model=CardResponse)
+@router.post("/{card_id}/move", response_model=CardOut)
 def move_card(
     card_id: int,
     data: CardMove,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: UserOut = Depends(get_current_user),
+    card_repo: CardRepository = Depends(get_card_repo),
+    column_repo: ColumnRepository = Depends(get_column_repo),
+    project_repo: ProjectRepository = Depends(get_project_repo),
+    team_repo: TeamRepository = Depends(get_team_repo),
 ):
     """Move a card to a different column (state change). Records completion date for DONE column."""
-    card = _get_card_with_access(card_id, current_user, db)
-    target_col = _assert_column_accessible(data.column_id, current_user, db)
+    card = _get_card_with_access(card_id, current_user, card_repo, column_repo, project_repo, team_repo)
+    target_col = _assert_column_accessible(data.column_id, current_user, column_repo, project_repo, team_repo)
 
     old_column_id = card.column_id
-    card.column_id = target_col.id
+    updates: dict = {"column_id": target_col.id}
 
-    # Record completion when moving to DONE
     if target_col.title == "DONE":
-        card.completed_at = datetime.now(timezone.utc)
+        updates["completed_at"] = datetime.now(timezone.utc)
         if data.notes:
-            card.completion_notes = data.notes
+            updates["completion_notes"] = data.notes
     else:
-        # Clear completion data if moved away from DONE
-        card.completed_at = None
-        card.completion_notes = None
+        updates["completed_at"] = None
+        updates["completion_notes"] = None
 
-    # If notes provided and target is not DONE, still store them as completion_notes
-    # (useful for DESCARTADO or other states where notes make sense)
     if data.notes and target_col.title != "DONE":
-        card.completion_notes = data.notes
+        updates["completion_notes"] = data.notes
 
-    db.commit()
-    db.refresh(card)
+    updated = card_repo.update(card_id, updates)
     logger.info(
         "card_moved",
         card_id=card_id,
@@ -200,17 +177,19 @@ def move_card(
         to_title=target_col.title,
         user_id=current_user.id,
     )
-    return card
+    return updated
 
 
 @router.delete("/{card_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_card(
     card_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: UserOut = Depends(get_current_user),
+    card_repo: CardRepository = Depends(get_card_repo),
+    column_repo: ColumnRepository = Depends(get_column_repo),
+    project_repo: ProjectRepository = Depends(get_project_repo),
+    team_repo: TeamRepository = Depends(get_team_repo),
 ):
     """Delete a card by ID. Any team member can delete cards."""
-    card = _get_card_with_access(card_id, current_user, db)
-    db.delete(card)
-    db.commit()
+    _get_card_with_access(card_id, current_user, card_repo, column_repo, project_repo, team_repo)
+    card_repo.delete(card_id)
     logger.info("card_deleted", card_id=card_id, user_id=current_user.id)

@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from database import Base, get_db
 from main import app
-from models import User
+from repositories.sqlalchemy.db_models import UserRow
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 
@@ -51,7 +51,7 @@ def registered_user(client, db):
     })
     assert resp.status_code == 201
     # Promote to superadmin so test user can create teams/projects
-    user = db.query(User).filter(User.username == "testuser").first()
+    user = db.query(UserRow).filter(UserRow.username == "testuser").first()
     user.role = "superadmin"
     db.commit()
     data = resp.json()

@@ -1,41 +1,26 @@
-"""SQLAlchemy ORM models for users, teams, projects, columns, cards, categories, and typologies."""
+"""SQLAlchemy ORM models — internal to the repository layer."""
 
 from sqlalchemy import Boolean, Column as Col, ForeignKey, Integer, String, DateTime, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-import enum
 
 from database import Base
 
 
-class RoleEnum(str, enum.Enum):
-    superadmin = "superadmin"
-    user = "user"
-
-
-class TeamRoleEnum(str, enum.Enum):
-    admin = "admin"
-    member = "member"
-
-
-class User(Base):
-    """Application user with email/password authentication and global role."""
-
+class UserRow(Base):
     __tablename__ = "users"
 
     id              = Col(Integer, primary_key=True, index=True)
     email           = Col(String, unique=True, index=True, nullable=False)
     username        = Col(String, unique=True, index=True, nullable=False)
     hashed_password = Col(String, nullable=False)
-    role            = Col(String, nullable=False, default=RoleEnum.user.value)
+    role            = Col(String, nullable=False, default="user")
     created_at      = Col(DateTime(timezone=True), server_default=func.now())
 
-    team_memberships = relationship("TeamMember", back_populates="user", cascade="all, delete")
+    team_memberships = relationship("TeamMemberRow", back_populates="user", cascade="all, delete")
 
 
-class Team(Base):
-    """A team groups users and owns projects."""
-
+class TeamRow(Base):
     __tablename__ = "teams"
 
     id          = Col(Integer, primary_key=True, index=True)
@@ -43,27 +28,23 @@ class Team(Base):
     description = Col(String, nullable=True)
     created_at  = Col(DateTime(timezone=True), server_default=func.now())
 
-    members  = relationship("TeamMember", back_populates="team", cascade="all, delete")
-    projects = relationship("Project", back_populates="team", cascade="all, delete")
+    members  = relationship("TeamMemberRow", back_populates="team", cascade="all, delete")
+    projects = relationship("ProjectRow", back_populates="team", cascade="all, delete")
 
 
-class TeamMember(Base):
-    """Association between a user and a team, with a role within that team."""
-
+class TeamMemberRow(Base):
     __tablename__ = "team_members"
 
     id      = Col(Integer, primary_key=True, index=True)
     team_id = Col(Integer, ForeignKey("teams.id"), nullable=False)
     user_id = Col(Integer, ForeignKey("users.id"), nullable=False)
-    role    = Col(String, nullable=False, default=TeamRoleEnum.member.value)
+    role    = Col(String, nullable=False, default="member")
 
-    team = relationship("Team", back_populates="members")
-    user = relationship("User", back_populates="team_memberships")
+    team = relationship("TeamRow", back_populates="members")
+    user = relationship("UserRow", back_populates="team_memberships")
 
 
-class Project(Base):
-    """Top-level container that groups board columns, owned by a team."""
-
+class ProjectRow(Base):
     __tablename__ = "projects"
 
     id          = Col(Integer, primary_key=True, index=True)
@@ -75,14 +56,12 @@ class Project(Base):
     archived    = Col(Boolean, default=False, nullable=False)
     created_at  = Col(DateTime(timezone=True), server_default=func.now())
 
-    team    = relationship("Team", back_populates="projects")
-    owner   = relationship("User")
-    columns = relationship("BoardColumn", back_populates="project", cascade="all, delete", order_by="BoardColumn.position")
+    team    = relationship("TeamRow", back_populates="projects")
+    owner   = relationship("UserRow")
+    columns = relationship("BoardColumnRow", back_populates="project", cascade="all, delete", order_by="BoardColumnRow.position")
 
 
-class BoardColumn(Base):
-    """Kanban column belonging to a project (e.g. TO DO, IN PROGRESS, DONE)."""
-
+class BoardColumnRow(Base):
     __tablename__ = "columns"
 
     id                     = Col(Integer, primary_key=True, index=True)
@@ -95,51 +74,43 @@ class BoardColumn(Base):
     is_visible_by_default  = Col(Boolean, default=True, nullable=False)
     created_at             = Col(DateTime(timezone=True), server_default=func.now())
 
-    owner   = relationship("User")
-    project = relationship("Project", back_populates="columns")
-    cards   = relationship("Card", back_populates="column", cascade="all, delete", order_by="Card.position")
+    owner   = relationship("UserRow")
+    project = relationship("ProjectRow", back_populates="columns")
+    cards   = relationship("CardRow", back_populates="column", cascade="all, delete", order_by="CardRow.position")
 
 
-class Category(Base):
-    """Card category (e.g. Bug, Task, Sugerencia)."""
-
+class CategoryRow(Base):
     __tablename__ = "categories"
 
     id          = Col(Integer, primary_key=True, index=True)
     name        = Col(String, unique=True, nullable=False)
     description = Col(String, nullable=True)
 
-    allowed_typologies = relationship("CategoryTypology", back_populates="category")
+    allowed_typologies = relationship("CategoryTypologyRow", back_populates="category")
 
 
-class Typology(Base):
-    """Card typology / template (e.g. Desarrollo, Mantenimiento, Diseno)."""
-
+class TypologyRow(Base):
     __tablename__ = "typologies"
 
     id          = Col(Integer, primary_key=True, index=True)
     name        = Col(String, unique=True, nullable=False)
     description = Col(String, nullable=True)
 
-    allowed_categories = relationship("CategoryTypology", back_populates="typology")
+    allowed_categories = relationship("CategoryTypologyRow", back_populates="typology")
 
 
-class CategoryTypology(Base):
-    """Many-to-many check table: which category+typology combos are enabled."""
-
+class CategoryTypologyRow(Base):
     __tablename__ = "category_typology"
 
     category_id = Col(Integer, ForeignKey("categories.id"), primary_key=True)
     typology_id = Col(Integer, ForeignKey("typologies.id"), primary_key=True)
     enabled     = Col(Boolean, nullable=False, default=True)
 
-    category = relationship("Category", back_populates="allowed_typologies")
-    typology = relationship("Typology", back_populates="allowed_categories")
+    category = relationship("CategoryRow", back_populates="allowed_typologies")
+    typology = relationship("TypologyRow", back_populates="allowed_categories")
 
 
-class Card(Base):
-    """Individual work item placed inside a board column."""
-
+class CardRow(Base):
     __tablename__ = "cards"
 
     id               = Col(Integer, primary_key=True, index=True)
@@ -157,7 +128,7 @@ class Card(Base):
     created_at       = Col(DateTime(timezone=True), server_default=func.now())
     updated_at       = Col(DateTime(timezone=True), onupdate=func.now())
 
-    column   = relationship("BoardColumn", back_populates="cards")
-    category = relationship("Category")
-    typology = relationship("Typology")
-    assignee = relationship("User", foreign_keys=[assigned_to])
+    column   = relationship("BoardColumnRow", back_populates="cards")
+    category = relationship("CategoryRow")
+    typology = relationship("TypologyRow")
+    assignee = relationship("UserRow", foreign_keys=[assigned_to])

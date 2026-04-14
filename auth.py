@@ -8,11 +8,10 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 import bcrypt
-from sqlalchemy.orm import Session
 
-from database import get_db
-from models import User
-from schemas import TokenData
+from models.auth import TokenData
+from models.user import UserOut
+from repositories.sqlalchemy import get_user_repo, SqlUserRepository
 
 logger = structlog.get_logger()
 
@@ -44,9 +43,9 @@ def create_access_token(data: dict) -> str:
 
 def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
-    db: Session = Depends(get_db),
-) -> User:
-    """Decode the Bearer token and return the authenticated User, or raise 401."""
+    user_repo: SqlUserRepository = Depends(get_user_repo),
+) -> UserOut:
+    """Decode the Bearer token and return the authenticated user, or raise 401."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -63,7 +62,7 @@ def get_current_user(
         logger.warning("auth_failed", reason="invalid_jwt")
         raise credentials_exception
 
-    user = db.query(User).filter(User.username == token_data.username).first()
+    user = user_repo.get_by_username(token_data.username)
     if user is None:
         logger.warning("auth_failed", reason="user_not_found", username=token_data.username)
         raise credentials_exception

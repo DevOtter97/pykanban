@@ -2,54 +2,45 @@
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 
 from auth import get_current_user
-from database import get_db
-from models import Category, CategoryTypology, Typology, User
-from schemas import CategoryTypologySet, CategoryTypologyResponse
+from models.user import UserOut
+from models.category_typology import CategoryTypologySet, CategoryTypologyOut
+from repositories.protocols import CategoryRepository, TypologyRepository, CategoryTypologyRepository
+from repositories.sqlalchemy import get_category_repo, get_typology_repo, get_cat_typ_repo
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/category-typology", tags=["category-typology"])
 
 
-@router.get("/", response_model=list[CategoryTypologyResponse])
+@router.get("/", response_model=list[CategoryTypologyOut])
 def list_mappings(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: UserOut = Depends(get_current_user),
+    cat_typ_repo: CategoryTypologyRepository = Depends(get_cat_typ_repo),
 ):
     """List all category ↔ typology mappings."""
-    return db.query(CategoryTypology).all()
+    return cat_typ_repo.list_all()
 
 
-@router.put("/", response_model=CategoryTypologyResponse)
+@router.put("/", response_model=CategoryTypologyOut)
 def set_mapping(
     data: CategoryTypologySet,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    current_user: UserOut = Depends(get_current_user),
+    cat_repo: CategoryRepository = Depends(get_category_repo),
+    typ_repo: TypologyRepository = Depends(get_typology_repo),
+    cat_typ_repo: CategoryTypologyRepository = Depends(get_cat_typ_repo),
 ):
     """Create or update a category ↔ typology mapping."""
-    if not db.query(Category).filter(Category.id == data.category_id).first():
+    if not cat_repo.exists(data.category_id):
         raise HTTPException(status_code=404, detail="Category not found")
-    if not db.query(Typology).filter(Typology.id == data.typology_id).first():
+    if not typ_repo.exists(data.typology_id):
         raise HTTPException(status_code=404, detail="Typology not found")
-
-    mapping = (
-        db.query(CategoryTypology)
-        .filter(
-            CategoryTypology.category_id == data.category_id,
-            CategoryTypology.typology_id == data.typology_id,
-        )
-        .first()
+    mapping = cat_typ_repo.set_mapping(
+        category_id=data.category_id,
+        typology_id=data.typology_id,
+        enabled=data.enabled,
     )
-    if mapping:
-        mapping.enabled = data.enabled
-    else:
-        mapping = CategoryTypology(**data.model_dump())
-        db.add(mapping)
-    db.commit()
-    db.refresh(mapping)
     logger.info(
         "category_typology_set",
         category_id=data.category_id,
