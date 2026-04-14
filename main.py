@@ -12,6 +12,7 @@ logger = structlog.get_logger()
 
 import migrations
 from database import Base, engine
+import repositories.sqlalchemy.db_models  # noqa: F401 — register ORM models with Base.metadata
 from routers import cards, users, columns, projects, categories, typologies, category_typology, teams
 
 # Run migrations before creating tables (adds missing columns to existing DB)
