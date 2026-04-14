@@ -22,7 +22,7 @@ MANDATORY_COLUMNS = [
 ]
 
 
-def _ensure_mandatory_columns(project_id: int, db: Session):
+def _ensure_mandatory_columns(project_id: int, owner_id: int, db: Session):
     """Create mandatory columns for a project if they don't exist yet."""
     existing = (
         db.query(BoardColumn)
@@ -32,7 +32,7 @@ def _ensure_mandatory_columns(project_id: int, db: Session):
     existing_titles = {c.title for c in existing}
     for col_def in MANDATORY_COLUMNS:
         if col_def["title"] not in existing_titles:
-            col = BoardColumn(**col_def, project_id=project_id)
+            col = BoardColumn(**col_def, project_id=project_id, owner_id=owner_id)
             db.add(col)
     db.commit()
 
@@ -46,7 +46,7 @@ def list_columns(
 ):
     """List columns for a project. Creates mandatory columns on first access."""
     require_project_access(current_user, project_id, db)
-    _ensure_mandatory_columns(project_id, db)
+    _ensure_mandatory_columns(project_id, current_user.id, db)
     query = (
         db.query(BoardColumn)
         .filter(BoardColumn.project_id == project_id)
