@@ -1,7 +1,16 @@
 """Pydantic schemas for request validation and response serialization."""
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from datetime import datetime
+
+
+FORBIDDEN_STRINGS = {"undefined", "null", "none", ""}
+
+
+def _validate_not_undefined(v: str, field_name: str) -> str:
+    if v.strip().lower() in FORBIDDEN_STRINGS:
+        raise ValueError(f"{field_name} cannot be empty or undefined")
+    return v
 
 
 # ── User ──────────────────────────────────────────────────────────────────────
@@ -10,6 +19,11 @@ class UserCreate(BaseModel):
     email: EmailStr
     username: str
     password: str
+
+    @field_validator("username")
+    @classmethod
+    def username_not_undefined(cls, v: str) -> str:
+        return _validate_not_undefined(v, "username")
 
 class UserResponse(BaseModel):
     id: int
@@ -25,6 +39,11 @@ class UserResponse(BaseModel):
 class TeamCreate(BaseModel):
     name: str
     description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_undefined(cls, v: str) -> str:
+        return _validate_not_undefined(v, "name")
 
 class TeamUpdate(BaseModel):
     name: str | None = None
@@ -68,6 +87,11 @@ class ProjectCreate(BaseModel):
     position: int = 0
     team_id: int
 
+    @field_validator("title")
+    @classmethod
+    def title_not_undefined(cls, v: str) -> str:
+        return _validate_not_undefined(v, "title")
+
 class ProjectUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
@@ -92,6 +116,11 @@ class ColumnCreate(BaseModel):
     position: int = 0
     project_id: int
 
+    @field_validator("title")
+    @classmethod
+    def title_not_undefined(cls, v: str) -> str:
+        return _validate_not_undefined(v, "title")
+
 class ColumnUpdate(BaseModel):
     title: str | None = None
     color: str | None = None
@@ -103,6 +132,11 @@ class ColumnUpdate(BaseModel):
 class CategoryCreate(BaseModel):
     name: str
     description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_undefined(cls, v: str) -> str:
+        return _validate_not_undefined(v, "name")
 
 class CategoryUpdate(BaseModel):
     name: str | None = None
@@ -120,6 +154,11 @@ class CategoryResponse(BaseModel):
 class TypologyCreate(BaseModel):
     name: str
     description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_undefined(cls, v: str) -> str:
+        return _validate_not_undefined(v, "name")
 
 class TypologyUpdate(BaseModel):
     name: str | None = None
@@ -191,6 +230,11 @@ class CardCreate(BaseModel):
     description: str | None = None
     position: int = 0
     column_id: int
+
+    @field_validator("title")
+    @classmethod
+    def title_not_undefined(cls, v: str) -> str:
+        return _validate_not_undefined(v, "title")
     category_id: int | None = None
     typology_id: int | None = None
     content: dict | None = None
