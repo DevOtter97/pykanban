@@ -39,7 +39,7 @@ def list_teams(
     team_ids = (
         db.query(TeamMember.team_id)
         .filter(TeamMember.user_id == current_user.id)
-        .subquery()
+        .scalar_subquery()
     )
     return db.query(Team).filter(Team.id.in_(team_ids)).order_by(Team.name).all()
 

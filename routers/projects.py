@@ -40,7 +40,7 @@ def list_projects(
         team_ids = (
             db.query(TeamMember.team_id)
             .filter(TeamMember.user_id == current_user.id)
-            .subquery()
+            .scalar_subquery()
         )
         query = query.filter(
             (Project.team_id.in_(team_ids)) | (Project.owner_id == current_user.id)

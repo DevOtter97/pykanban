@@ -89,12 +89,12 @@ def get_cards_by_due_date(
         team_ids = (
             db.query(TeamMember.team_id)
             .filter(TeamMember.user_id == current_user.id)
-            .subquery()
+            .scalar_subquery()
         )
         project_ids = (
             db.query(Project.id)
             .filter((Project.team_id.in_(team_ids)) | (Project.owner_id == current_user.id))
-            .subquery()
+            .scalar_subquery()
         )
         query = query.filter(
             (BoardColumn.project_id.in_(project_ids)) | (BoardColumn.owner_id == current_user.id)
