@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from database import Base, get_db
 from main import app
+from models import User
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 
@@ -42,14 +43,20 @@ def client(db):
 
 
 @pytest.fixture()
-def registered_user(client):
+def registered_user(client, db):
     resp = client.post("/auth/register", json={
         "email": "test@example.com",
         "username": "testuser",
         "password": "secret123",
     })
     assert resp.status_code == 201
-    return resp.json()
+    # Promote to superadmin so test user can create teams/projects
+    user = db.query(User).filter(User.username == "testuser").first()
+    user.role = "superadmin"
+    db.commit()
+    data = resp.json()
+    data["role"] = "superadmin"
+    return data
 
 
 @pytest.fixture()
@@ -63,8 +70,21 @@ def auth_header(client, registered_user):
 
 
 @pytest.fixture()
-def project(client, auth_header):
-    resp = client.post("/projects/", json={"title": "Test Project"}, headers=auth_header)
+def team(client, auth_header):
+    resp = client.post("/teams/", json={
+        "name": "Test Team",
+        "description": "A test team",
+    }, headers=auth_header)
+    assert resp.status_code == 201
+    return resp.json()
+
+
+@pytest.fixture()
+def project(client, auth_header, team):
+    resp = client.post("/projects/", json={
+        "title": "Test Project",
+        "team_id": team["id"],
+    }, headers=auth_header)
     assert resp.status_code == 201
     return resp.json()
 
@@ -118,3 +138,26 @@ def card(client, auth_header, column):
     }, headers=auth_header)
     assert resp.status_code == 201
     return resp.json()
+
+
+# ── Helper fixtures for second user (member role) ───────────────────────────
+
+@pytest.fixture()
+def member_user(client, db):
+    resp = client.post("/auth/register", json={
+        "email": "member@example.com",
+        "username": "memberuser",
+        "password": "secret123",
+    })
+    assert resp.status_code == 201
+    return resp.json()
+
+
+@pytest.fixture()
+def member_header(client, member_user):
+    resp = client.post("/auth/login", data={
+        "username": "memberuser",
+        "password": "secret123",
+    })
+    token = resp.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}

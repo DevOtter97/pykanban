@@ -119,6 +119,47 @@ class TestDeleteCard:
         assert resp.status_code == 404
 
 
+class TestMoveCard:
+    def test_move_to_done(self, client, auth_header, card, project):
+        # Get the DONE column
+        cols = client.get(f"/columns/?project_id={project['id']}&include_hidden=true", headers=auth_header).json()
+        done_col = next(c for c in cols if c["title"] == "DONE")
+        resp = client.post(f"/cards/{card['id']}/move", json={
+            "column_id": done_col["id"],
+            "notes": "Task completed successfully",
+        }, headers=auth_header)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["column_id"] == done_col["id"]
+        assert data["completed_at"] is not None
+        assert data["completion_notes"] == "Task completed successfully"
+
+    def test_move_away_from_done_clears_completion(self, client, auth_header, card, project):
+        cols = client.get(f"/columns/?project_id={project['id']}&include_hidden=true", headers=auth_header).json()
+        done_col = next(c for c in cols if c["title"] == "DONE")
+        todo_col = next(c for c in cols if c["title"] == "TO DO")
+        # Move to DONE
+        client.post(f"/cards/{card['id']}/move", json={"column_id": done_col["id"]}, headers=auth_header)
+        # Move back to TO DO
+        resp = client.post(f"/cards/{card['id']}/move", json={"column_id": todo_col["id"]}, headers=auth_header)
+        assert resp.status_code == 200
+        assert resp.json()["completed_at"] is None
+
+    def test_move_to_descartado_with_notes(self, client, auth_header, card, project):
+        cols = client.get(f"/columns/?project_id={project['id']}&include_hidden=true", headers=auth_header).json()
+        desc_col = next(c for c in cols if c["title"] == "DESCARTADO")
+        resp = client.post(f"/cards/{card['id']}/move", json={
+            "column_id": desc_col["id"],
+            "notes": "Not needed anymore",
+        }, headers=auth_header)
+        assert resp.status_code == 200
+        assert resp.json()["completion_notes"] == "Not needed anymore"
+
+    def test_move_not_found(self, client, auth_header, column):
+        resp = client.post("/cards/999/move", json={"column_id": column["id"]}, headers=auth_header)
+        assert resp.status_code == 404
+
+
 class TestGetMyCards:
     def test_my_cards(self, client, auth_header, column, registered_user):
         client.post("/cards/", json={

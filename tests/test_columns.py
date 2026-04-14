@@ -1,12 +1,22 @@
 class TestListColumns:
-    def test_list_creates_defaults(self, client, auth_header, project):
+    def test_list_creates_mandatory(self, client, auth_header, project):
         resp = client.get(f"/columns/?project_id={project['id']}", headers=auth_header)
         assert resp.status_code == 200
         data = resp.json()
+        # By default DESCARTADO is hidden
         assert len(data) == 3
-        assert data[0]["title"] == "Pendiente"
-        assert data[1]["title"] == "En progreso"
-        assert data[2]["title"] == "Hecho"
+        titles = [c["title"] for c in data]
+        assert "TO DO" in titles
+        assert "IN PROGRESS" in titles
+        assert "DONE" in titles
+
+    def test_list_include_hidden(self, client, auth_header, project):
+        resp = client.get(f"/columns/?project_id={project['id']}&include_hidden=true", headers=auth_header)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 4
+        titles = [c["title"] for c in data]
+        assert "DESCARTADO" in titles
 
     def test_list_not_own_project(self, client, auth_header):
         resp = client.get("/columns/?project_id=999", headers=auth_header)
@@ -24,6 +34,7 @@ class TestCreateColumn:
         data = resp.json()
         assert data["title"] == "Custom"
         assert data["color"] == "#ff0000"
+        assert data["is_mandatory"] is False
 
     def test_create_invalid_project(self, client, auth_header):
         resp = client.post("/columns/", json={
@@ -34,12 +45,20 @@ class TestCreateColumn:
 
 
 class TestUpdateColumn:
-    def test_update(self, client, auth_header, column):
+    def test_update_custom(self, client, auth_header, column):
         resp = client.patch(f"/columns/{column['id']}", json={
             "title": "Renamed",
         }, headers=auth_header)
         assert resp.status_code == 200
         assert resp.json()["title"] == "Renamed"
+
+    def test_cannot_rename_mandatory(self, client, auth_header, project):
+        # List to trigger mandatory column creation
+        cols = client.get(f"/columns/?project_id={project['id']}&include_hidden=true", headers=auth_header).json()
+        todo_col = next(c for c in cols if c["title"] == "TO DO")
+        resp = client.patch(f"/columns/{todo_col['id']}", json={"title": "Renamed"}, headers=auth_header)
+        assert resp.status_code == 400
+        assert "mandatory" in resp.json()["detail"].lower()
 
     def test_update_not_found(self, client, auth_header):
         resp = client.patch("/columns/999", json={"title": "X"}, headers=auth_header)
@@ -47,9 +66,16 @@ class TestUpdateColumn:
 
 
 class TestDeleteColumn:
-    def test_delete(self, client, auth_header, column):
+    def test_delete_custom(self, client, auth_header, column):
         resp = client.delete(f"/columns/{column['id']}", headers=auth_header)
         assert resp.status_code == 204
+
+    def test_cannot_delete_mandatory(self, client, auth_header, project):
+        cols = client.get(f"/columns/?project_id={project['id']}&include_hidden=true", headers=auth_header).json()
+        todo_col = next(c for c in cols if c["title"] == "TO DO")
+        resp = client.delete(f"/columns/{todo_col['id']}", headers=auth_header)
+        assert resp.status_code == 400
+        assert "mandatory" in resp.json()["detail"].lower()
 
     def test_delete_not_found(self, client, auth_header):
         resp = client.delete("/columns/999", headers=auth_header)
