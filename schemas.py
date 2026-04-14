@@ -15,6 +15,47 @@ class UserResponse(BaseModel):
     id: int
     email: str
     username: str
+    role: str
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+# ── Team ──────────────────────────────────────────────────────────────────────
+
+class TeamCreate(BaseModel):
+    name: str
+    description: str | None = None
+
+class TeamUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+class TeamMemberAdd(BaseModel):
+    user_id: int
+    role: str = "member"
+
+class TeamMemberUpdate(BaseModel):
+    role: str
+
+class TeamMemberResponse(BaseModel):
+    id: int
+    user_id: int
+    role: str
+    user: UserResponse
+    model_config = {"from_attributes": True}
+
+class TeamResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None
+    created_at: datetime
+    members: list[TeamMemberResponse] = []
+    model_config = {"from_attributes": True}
+
+class TeamListResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None
     created_at: datetime
     model_config = {"from_attributes": True}
 
@@ -25,6 +66,7 @@ class ProjectCreate(BaseModel):
     title: str
     description: str | None = None
     position: int = 0
+    team_id: int
 
 class ProjectUpdate(BaseModel):
     title: str | None = None
@@ -36,6 +78,8 @@ class ProjectResponse(BaseModel):
     title: str
     description: str | None
     position: int
+    team_id: int | None
+    archived: bool
     created_at: datetime
     model_config = {"from_attributes": True}
 
@@ -125,6 +169,8 @@ class CardResponse(BaseModel):
     due_date: datetime | None
     assigned_to: int | None
     assignee: AssigneeResponse | None
+    completed_at: datetime | None
+    completion_notes: str | None
     created_at: datetime
     updated_at: datetime | None
     model_config = {"from_attributes": True}
@@ -135,6 +181,8 @@ class ColumnResponse(BaseModel):
     color: str
     position: int
     project_id: int | None
+    is_mandatory: bool
+    is_visible_by_default: bool
     cards: list[CardResponse] = []
     model_config = {"from_attributes": True}
 
@@ -153,12 +201,15 @@ class CardUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     position: int | None = None
-    column_id: int | None = None
     category_id: int | None = None
     typology_id: int | None = None
     content: dict | None = None
     due_date: datetime | None = None
     assigned_to: int | None = None
+
+class CardMove(BaseModel):
+    column_id: int
+    notes: str | None = None
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
