@@ -9,6 +9,7 @@ class TestRegister:
         data = resp.json()
         assert data["username"] == "newuser"
         assert data["email"] == "new@example.com"
+        assert data["role"] == "user"
         assert "id" in data
 
     def test_register_duplicate_email(self, client, registered_user):
@@ -61,6 +62,7 @@ class TestMe:
         resp = client.get("/auth/me", headers=auth_header)
         assert resp.status_code == 200
         assert resp.json()["username"] == "testuser"
+        assert resp.json()["role"] == "superadmin"
 
     def test_get_me_unauthenticated(self, client):
         resp = client.get("/auth/me")
